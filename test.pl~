@@ -1,0 +1,7 @@
+#!/usr/bin/perl -w 
+use Text::Levenshtein qw(fastdistance);
+print fastdistance('foo','four');
+$_ = "ABjkhdg";
+tr/[A-Z]/[a-z]/;
+print $_;
+

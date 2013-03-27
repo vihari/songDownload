@@ -1,0 +1,40 @@
+/*
+The MIT License (MIT)
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Author: Vihari Piratla
+EMail: viharipiratla@gmail.com
+Date: 27th march 2013.
+*/
+
+var page = require('webpage').create(),
+system = require('system');
+
+if (system.args.length < 2 || system.args.length > 2) {
+    console.log('Usage: dl.js URL');
+    phantom.exit(1);
+}
+else{ 
+    var url=system.args[1];
+    page.open(url,
+	      function (status) {
+		  if (status !== 'success') {
+		      console.log('Unable to access network');
+		  } else {
+		      //To make sure that the page has fully loaded. This is under the assumption that the page from which we are trying to download is youtube-mp3.org and the site stays infinitely static :)
+		      //while(!((page.content).match(/Link this mp3/)));
+		      window.setTimeout(function(){
+			  steps = page.content;
+			  console.log(steps);
+			  phantom.exit();
+		      },10000);
+		  }
+		  
+	      }); 
+}

@@ -1,0 +1,11 @@
+var page = require('webpage').create(),
+system = require('system');
+
+page.open(encodeURI('http://www.youtube-mp3.org/#v=KYG3K3YqdJg'), function (status) {
+    if (status !== 'success') {
+        console.log('Unable to access network');
+    } else {
+        steps = page.content;
+	console.log(steps);
+    }
+    

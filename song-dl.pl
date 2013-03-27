@@ -1,0 +1,295 @@
+=begin
+The MIT License (MIT)
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Author: Vihari Piratla
+EMail: viharipiratla@gmail.com
+Date: 27th march 2013.
+=end comment
+=cut
+
+#This script is to download the mp3 format of song.
+#The usage is the script "The name of the song."
+#This script assumes that the system has an internet connection.
+#! /usr/bin/perl -w
+sub min{
+    my ($min,@vars)=@_;
+    for(@vars){
+	$min=$_ if $_<$min;
+    }
+    return $min;
+}
+
+sub max{
+    my ($max,@vars)=@_;
+    for(@vars){
+	$max=$_ if $_>$max
+    }
+    return $max;
+}
+
+#For the sake of parameters
+use Getopt::Long;
+#To retrieve the webpages
+use LWP::Simple;
+
+use HTML::TreeBuilder;
+use Text::Levenshtein qw(fastdistance);
+
+$video = '';#default value is false.
+GetOptions ('video' => \$video);
+#these keywords help in filtering or ranking the results to those that are relevant. This is under the assumption that one always try to download the movie songs also all the words that are present in the search string will be added to this array. It will be more benefical if one can append as many search strings to the search pattern.
+@keywords=('telugu','movie','video','songs','full','official','star','starring');
+#These are again some tools to filter out some unwanted results.
+#in seconds
+$min_time = 0*60+20;
+$max_time = 8*60+30;
+$len = @ARGV;
+if($len<1){
+    print "The usage of the script is :\n";
+    print "script 'Name of the song'\n";
+    print "--video to download the video rather than just the mp3.\n";
+    exit;
+}
+#Those which are not in the [min_time,max_time] range will be discarded and those that contain the keywords of the array keywords will be ranked on the basis of number of matches. If there is none that matches a single keyword of it then an image search is made with image and page will be parsed for any of the keywords and may be re-ranked.
+
+$search_str = join('+',@ARGV);
+foreach my $arg (@ARGV){
+    push(@keywords,$arg);
+}
+
+$_=$search_str;
+$_= s/\s/+/g;
+my $url = "http://www.youtube.com/results?search_query=".$search_str;
+my $content = get $url;
+my $whole_content=$content;
+#print $content;
+#open(CON,"content_palike");
+#@lines=<CON>;
+#$content=join('',@lines);
+#s modifier is to say perl to also match \n with the dot operator.
+$content =~ /(<ol\sid="search-results".*ol>)/s;
+$content=$1;
+
+#content now contains the ordered list of search results
+my $root = HTML::TreeBuilder->new;
+$root->parse( $content);
+
+$ol=$root->look_down(_tag => 'ol');
+if(!$ol){
+    print "Hey! Youtube wasn't able to find a match for this\n";
+    print"Youtube suggests the following spell correction\n";
+    
+    my $root = HTML::TreeBuilder->new;
+    $root->parse( $whole_content);
+    $results=$root->look_down('id'=>'results');
+    $results=$results->look_down('class'=>'spell-correction did-you-mean');
+    $results=$results->look_down(_tag=>"a");
+    print $results->as_text;
+    print "\n";
+    exit;
+}
+
+$root->eof( );  # done parsing for this tree
+#$root->dump; #dumps the tree representation of the HTML.
+
+my @items = $ol->content_list;
+
+#Now we have each li element that describes the video result stored in the items array.
+
+#In this array we try re rank or prune some of the results.
+#though google might have already done this, lets give it a try.
+my $google_rank=1;
+
+my $best_title;
+my $best_result;
+my $best_description;
+my $best_href;
+my $best_thumbnail;
+my $best_score=-1;
+my $best_time;
+
+foreach my $result (@items){
+    my $match_score=1;
+#    foreach $keyword (@keywords){
+    $title=$result->attr('data-context-item-title');
+    $id=$result->attr('data-context-item-id');
+    $time=$result->attr('data-context-item-time');
+    $views=$result->attr('data-context-item-views');
+    if((!time)||(!views)){
+	next;
+    }
+    print "Views: $views\n";
+    $subdiv=$result->look_down('class'=>'yt-lockup2-content');
+    if($subdiv){
+	$desc = $subdiv->look_down('class'=>'yt-lockup2-description');
+    }
+    $description=$title;
+    if($desc){
+	$description=$description." ".$desc->as_text;
+    }
+
+#This is under the assumption that the time format in youtube is no more than that of hours.
+    my $ts;
+    print "time b4: $time\n";
+    if($time=~/(\d{1,2}):(\d{1,2}):(\d{1,2})/){
+	$ts=$1*3600+$2*60*$3*60;
+    }
+    if($time=~/(\d{1,2}):(\d{1,2})/){
+	$ts=$1*60+$2;
+    }
+    print "time: $ts\n";
+
+    @tokens=split(/\s+/,$description);
+    foreach $keyword(@keywords){
+	$distance=1000000;
+	foreach $token(@tokens){
+	    $_=$token;
+	    tr/[A-Z]/[a-z]/;
+	    $token=$_;
+	    $_=$keyword;
+	    tr/[A-Z]/[a-z]/;
+	    $keyword=$_;
+	    $d = fastdistance($token,$keyword);#@keywords);
+	    $distance=min($distance,$d);
+	}
+	#This way of finding the distnace will help in misplellings assuming that the word is not terribly mis-spelled.
+	if($distance<3){
+	    $match_score=$match_score+1;
+	}
+    }
+    #lets check for their badges
+    if($subdiv){
+	$badge=$subdiv->look_down('class'=>'yt-lockup2-badges');
+	if($badge){
+	    $badge=$badge->as_text;
+	}
+    }
+    if($badge=~/OFFICIAl/i){
+	$match_score=$match_score*100;
+    }
+    
+    #To get the link of the video i.e. to the watch page.
+    my $href;
+    my $hr = $result->look_down('class'=>qr/(yt-lockup.*-thumbnail)/);
+    $a = $hr->look_down(_tag=>'a');
+    $href = $a->attr("href");
+    
+    #img tag seems to be buried to be deep in that we are not ablwe to access this way.
+    #$img=$a->look_down(_tag=>'img');
+
+    $a = $a->look_down('class'=>qr/^(video-thumb.*)/);
+    $a = $a->look_down(_tag=>'span');
+    $a = $a->look_down(_tag=>'span');
+    $img=$a->look_down(_tag=>'img');
+    
+    $thumbnail=$img->attr("src");
+    #Now depending on the number of views.
+    @tok=split(/\s+/,$views);
+    $num=$tok[0]; 
+    $_=$num;
+    s/,//g;
+    $views=$_;
+    print "Mul views: $views\n";
+    
+    $m=($match_score*$views)/100000;
+    $match_score=$m;
+    $thumbnail="http://img.youtube.com/vi/".$id."/0.jpg";
+    
+    print "The time is: ".$ts."\n";
+    print "max $max_time  min $min_time\n";
+    if(($ts>$max_time)||($ts<$min_time)||(!$ts)){
+	$match_score=0;
+    }
+    
+    $best_score=max($best_score,$match_score);
+    print $description."\n";
+    print $match_score."\n";
+    print "views: $views\n\n\n ";
+
+#    print "$best_score  $match_score\n";
+    if($best_score==$match_score){
+	$best_result=$result;
+	$best_description=$description;
+	$best_href=$href;
+	$best_thumbnail=$thumbnail;
+	$best_score=$match_score;
+	$best_time=$ts;
+    }
+    
+    #Well! Google rank is not going to affect the score for now, but the rank is respected as only the first 20 results are considered. and also observe that there is no = in max or min so while scanning from top to bottom, we are going to stick with the above ones than the below one's.
+    $google_rank = $google_rank+1;
+}
+
+$best_title=$best_result->attr('data-context-item-title');
+print "\nI am going to continue with this one:\n";
+print "$best_description\n";
+print "Score is: $best_score\n";
+print "Time $best_time \n";
+print "$best_href\n";
+print "$best_thumbnail\n";
+
+`wget --no-parent --accept=jpg,jpeg,htm,html --mirror $best_thumbnail`;
+
+$t=substr($best_thumbnail,7);
+print $t."\n";
+`sudo fbi -vt 1 $best_thumbnail`; 
+
+print "Are we good?\n";
+print "Press [Y/y]es or [N/n]o :   ";
+$action=<STDIN>;
+if($action=~/[Nn].*/){
+    print "You can try by extending the search or ommiting some of the keywords that you are unsure of\n";
+    exit(1);
+}
+
+if(!$video){
+#This part of downloading the video as mp3 happened to be the toughest part.
+#For now I will be using http://www.youtube-mp3.org. This is a webapp that converts the file and gives us the download link to mp3. Though there are many other such, this is the only site that stood firm to Youtube Copyright laws and remaining all seems to wooble a lot between their existance and diminish.
+#This guy like anyone took all the care such none will be able to download without navigating to the page. The page is not static to be downloaded by wget or curl, moreover they doesn't have support for javascript engine.
+#Hence phantomjs stood as saviour, that it loads the page like a browser and handles us the dynamic content that was created.
+
+    @tok=split(/\?/,$best_href);
+    $id=$tok[1];
+
+#Path to phantomjs binary file.
+    $PHANTOM="/media/vihari/0CA255D4A255C33E/Projects/songDownload/phantomjs-1.9.0-linux-i686/bin";
+    $url="http://www.youtube-mp3.org/"."#".$id;
+    print $url."\n";
+    $proxy="10.6.2.254:8080";
+    `rm -f cookies.txt`;
+    $str="$PHANTOM/phantomjs --cookies-file='cookies.txt' dl.js $url >index.html";
+    print "$str\n";
+    `$str`;
+
+#Again to build a tree and parse the contents
+    my $root = HTML::TreeBuilder->new;
+    $root->parse_file( "index.html");
+    $dl=$root->look_down("id"=>'dl_link');
+    $a=$dl->look_down(_tag=>'a');
+    $dl_link=$a->attr('href');
+    $dl_src="http://www.youtube-mp3.org$dl_link";
+    print $dl_src."\n";
+    `mkdir -p songs`;
+    @tok=split(/\+/,$search_str);
+    $name=join("_",@tok);
+    $wget="wget --keep-session-cookies --cookies=1 --load-cookies='cookies.txt' -O songs/$name.mp3 '$dl_src'";
+    print $wget;
+
+    `$wget`;
+}
+
+#To download the video itself.
+else{
+    $url="www.youtube.com$best_href";
+    `cd songs`;
+    #By default youtube-dl gets the best format if you want a worst format then      use -f worst
+    `youtube-dl -t $url`;
+    `cd ..`
+}
